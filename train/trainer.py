@@ -17,7 +17,7 @@ class TrainingConfig:
     output_dir: str = "Qwen-MinecraftLM"
     learning_rate: float = 5e-5
     epsilon: float = 1e-8
-    lr_warmup_steps: int = 100
+    lr_warmup_steps: int = 50
     batch_size: int = 4
     total_steps: int = 1000
     eval_iteration: int = 100

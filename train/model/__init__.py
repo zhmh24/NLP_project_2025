@@ -8,7 +8,7 @@ from train.model.Qwen import QwenForMinecraft
 def MinecraftLM(
     lm: Optional[PreTrainedModel] = None,
     tokenizer: Optional[PreTrainedTokenizer] = None,
-    context_length: int = 2048,
+    context_length: int = 24576,
     lm_path: Optional[str] = None,
     tokenizer_path: Optional[str] = None,
     **kwargs,

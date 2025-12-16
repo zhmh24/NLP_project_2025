@@ -18,7 +18,7 @@ class BaseMinecraftLM(metaclass=abc.ABCMeta):
         self,
         lm: Optional[PreTrainedModel] = None,
         tokenizer: Optional[PreTrainedTokenizer] = None,
-        context_len: int = 700,
+        context_length: int = 24576,
         lm_path: Optional[str] = None,
         tokenizer_path: Optional[str] = None,
         lm_kwargs: Dict[str, Any] = {},
@@ -27,7 +27,7 @@ class BaseMinecraftLM(metaclass=abc.ABCMeta):
         self.load_pretrained(
             lm_path, tokenizer_path, lm, tokenizer, lm_kwargs, tokenizer_kwargs
         )
-        self.context_len = context_len
+        self.context_length = context_length
 
     def train(self):
         self.lm.train()

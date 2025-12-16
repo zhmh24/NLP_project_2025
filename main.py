@@ -4,7 +4,7 @@ from train.trainer import MinecraftTrainer, TrainingConfig
 
 # 初始化模型和数据集
 model = MinecraftLM()
-dataset = MinecraftChunkDataset("data/dataset.jsonl", tokenizer=model.tokenizer, context_len=model.context_len)
+dataset = MinecraftChunkDataset("data/dataset.jsonl", tokenizer=model.tokenizer, context_length=model.context_length)
 
 # 可选：自定义训练参数
 config = TrainingConfig(

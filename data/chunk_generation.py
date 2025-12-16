@@ -22,6 +22,7 @@ parser = argparse.ArgumentParser(description="Generate a Minecraft world with a 
 parser.add_argument("--memory", default="6G", help="Memory for the server, e.g., 6G, 10G (default: 6G)")
 parser.add_argument("--port", type=int, default=25565, help="Port for the server (default: 25565)")
 parser.add_argument("--chunk-radius", type=int, required=True, help="Radius in chunks for world generation (e.g., 16 for a 256 block radius from center 0,0).")
+parser.add_argument("--biome", default="minecraft:plains", help="Biome for the world (default: minecraft:plains)")
 args = parser.parse_args()
 
 # Server configuration
@@ -114,6 +115,10 @@ def setup_server_directory(server_dir: Path, seed: int, port: int):
                     f.write(f"level-seed={seed}\n")
                 elif line.startswith("server-port="):
                     f.write(f"server-port={port}\n")
+                elif line.startswith("generate-structures="):
+                    f.write("generate-structures=false\n")
+                elif line.startswith("level-type="):
+                    f.write(f"level-type={args.biome}\n")
                 else:
                     f.write(line)
     else:

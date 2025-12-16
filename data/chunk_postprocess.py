@@ -24,12 +24,14 @@ def stage_1(folder_name, output_base_path):
     new_id = 0
     old_to_new_id = {}
     id_counts = {}
+    base_name_to_full_snbt = {}
 
     for snbt, old_id in snbt_to_id.items():
         base_name = snbt.split('[')[0]  # Extract base name from SNBT
         if base_name not in base_name_to_new_id:
             base_name_to_new_id[base_name] = new_id
             new_id_to_base_name[new_id] = base_name
+            base_name_to_full_snbt[base_name] = snbt  # Store the first full SNBT for this base name
             new_id += 1
         old_to_new_id[old_id] = base_name_to_new_id[base_name]
 
@@ -40,7 +42,7 @@ def stage_1(folder_name, output_base_path):
     id_counts = {int(k): int(v) for k, v in zip(unique, counts)}  # Ensure keys and values are standard Python types
 
     # Create the new id_to_snbt mapping
-    new_id_to_snbt = {new_id: base_name for new_id, base_name in new_id_to_base_name.items()}
+    new_id_to_snbt = {new_id: base_name_to_full_snbt[base_name] for new_id, base_name in new_id_to_base_name.items()}
 
     # Save the new mapping
     os.makedirs(output_path, exist_ok=True)
@@ -170,6 +172,10 @@ def stage_3(folder_name, output_base_path):
     char_block_ids = np.vectorize(id_to_char.get)(block_ids)
     os.makedirs(output_path, exist_ok=True)
     np.save(os.path.join(output_path, 'char_block_ids.npy'), char_block_ids)
+
+    # Save id_to_char mapping
+    with open(os.path.join(output_path, 'id_to_char.json'), 'w') as f:
+        json.dump(id_to_char, f, indent=2)
 
     # Save char_to_snbt mapping
     with open(os.path.join(output_path, 'char_to_snbt.json'), 'w') as f:

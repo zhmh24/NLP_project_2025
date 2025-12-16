@@ -7,6 +7,7 @@ from torch.utils.data import DataLoader
 from torch.optim import AdamW
 from tqdm import tqdm
 from transformers import get_linear_schedule_with_warmup, PreTrainedModel
+from torch.cuda.amp import GradScaler, autocast
 
 from train.model.Qwen import QwenForMinecraft
 from train.model.base import BaseMinecraftLM
@@ -45,6 +46,7 @@ class MinecraftTrainer:
             num_warmup_steps=self.config.lr_warmup_steps,
             num_training_steps=self.config.total_steps,
         )
+        self.scaler = GradScaler()  # 初始化混合精度训练的GradScaler
 
     def train(self):
         self.model.train()
@@ -59,15 +61,17 @@ class MinecraftTrainer:
                 attention_mask = batch["attention_mask"].to(self.device)
                 labels = batch["labels"].to(self.device)
 
-                outputs = self.model.lm(
-                    input_ids=input_ids,
-                    attention_mask=attention_mask,
-                    labels=labels
-                )
-                loss = outputs.loss
+                with autocast():  # 启用混合精度训练
+                    outputs = self.model.lm(
+                        input_ids=input_ids,
+                        attention_mask=attention_mask,
+                        labels=labels
+                    )
+                    loss = outputs.loss
 
-                loss.backward()
-                self.optimizer.step()
+                self.scaler.scale(loss).backward()  # 使用GradScaler缩放梯度
+                self.scaler.step(self.optimizer)  # 更新参数
+                self.scaler.update()  # 更新缩放因子
                 self.lr_scheduler.step()
                 self.optimizer.zero_grad()
 

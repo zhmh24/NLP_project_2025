@@ -197,6 +197,7 @@ def npy_to_jsonl(folder_name, output_base_path):
     Transform the dataset of npy files into a set of strings stored in JSONL format.
     Each line represents a block of 16x16x16, formatted with spaces between characters,
     '#' at the end of each 16-character line, '$' at the end of each 16x16 block, and '%' at the end.
+    The resulting JSONL lines are shuffled before saving.
     """
     input_path = os.path.join(output_base_path, folder_name, 's3', 'char_block_ids.npy')
     output_path = os.path.join(output_base_path, folder_name, 's3', 'dataset.jsonl')
@@ -210,17 +211,25 @@ def npy_to_jsonl(folder_name, output_base_path):
     assert block_ids.shape[3] == 16
 
     # Process the data into JSONL format
-    with open(output_path, 'w') as f:
-        for data_block in block_ids:
-            lines = []
-            for layer in data_block:
-                for row in layer:
-                    lines.append(' '.join(row) + ' #')
-                lines.append('$')
-            lines.append('%')
-            f.write(json.dumps({'data': ''.join(lines)}) + '\n')
+    jsonl_lines = []
+    for data_block in block_ids:
+        lines = []
+        for layer in data_block:
+            for row in layer:
+                lines.append(' '.join(row) + ' #')
+            lines.append('$')
+        lines.append('%')
+        jsonl_lines.append(json.dumps({'data': ''.join(lines)}) + '\n')
 
-    print(f"Dataset transformed to JSONL format and saved to {output_path}.")
+    # Shuffle the JSONL lines
+    import random
+    random.shuffle(jsonl_lines)
+
+    # Write the shuffled lines to the output file
+    with open(output_path, 'w') as f:
+        f.writelines(jsonl_lines)
+
+    print(f"Dataset transformed to JSONL format, shuffled, and saved to {output_path}.")
 
 def main():
     parser = argparse.ArgumentParser(description="Post-process Minecraft block data.")

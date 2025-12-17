@@ -22,7 +22,6 @@ parser = argparse.ArgumentParser(description="Generate a Minecraft world with a 
 parser.add_argument("--memory", default="6G", help="Memory for the server, e.g., 6G, 10G (default: 6G)")
 parser.add_argument("--port", type=int, default=25565, help="Port for the server (default: 25565)")
 parser.add_argument("--chunk-radius", type=int, required=True, help="Radius in chunks for world generation (e.g., 16 for a 256 block radius from center 0,0).")
-parser.add_argument("--biome", default="minecraft:plains", help="Biome for the world (default: minecraft:plains)")
 args = parser.parse_args()
 
 # Server configuration
@@ -97,36 +96,25 @@ def download_files():
             logging.error(f"Failed to download Chunky JAR: {e}")
             raise
 
-def setup_server_directory(server_dir: Path, seed: int, port: int):
+def setup_server_directory(server_dir: Path, seed: int, port: int, custom_properties: Path = None):
     """Set up a server directory with necessary files and customized server.properties."""
     server_dir.mkdir(parents=True, exist_ok=True)
-    
+
     paper_jar_dest = server_dir / PAPER_JAR
     if not paper_jar_dest.exists():
         shutil.copy(BASE_DIR / PAPER_JAR, paper_jar_dest)
-    
+
     server_properties_dest = server_dir / "server.properties"
-    if SERVER_PROPERTIES_TEMPLATE.exists():
-        with open(SERVER_PROPERTIES_TEMPLATE, "r") as f:
-            props = f.readlines()
-        with open(server_properties_dest, "w") as f:
-            for line in props:
-                if line.startswith("level-seed="):
-                    f.write(f"level-seed={seed}\n")
-                elif line.startswith("server-port="):
-                    f.write(f"server-port={port}\n")
-                elif line.startswith("generate-structures="):
-                    f.write("generate-structures=false\n")
-                elif line.startswith("level-type="):
-                    f.write(f"level-type={args.biome}\n")
-                else:
-                    f.write(line)
+    if custom_properties and custom_properties.exists():
+        logging.info(f"Using custom server.properties from {custom_properties}")
+        shutil.copy(custom_properties, server_properties_dest)
     else:
         logging.warning(f"server.properties template not found at {SERVER_PROPERTIES_TEMPLATE}. Using default server generation.")
+        exit(1)
 
     plugins_dir = server_dir / "plugins"
     plugins_dir.mkdir(exist_ok=True)
-    chunky_jar_dest = plugins_dir / CHUNKY_JAR # Note: Chunky JAR name includes version
+    chunky_jar_dest = plugins_dir / CHUNKY_JAR  # Note: Chunky JAR name includes version
     if not chunky_jar_dest.exists():
         shutil.copy(BASE_DIR / CHUNKY_JAR, chunky_jar_dest)
 
@@ -145,7 +133,7 @@ def run_server(server_dir: Path, seed: int, radius: int, port: int):
     """Run a server instance to generate all regions for a world."""
     logging.info(f"Starting server in {server_dir} with seed {seed} on port {port}")
 
-    setup_server_directory(server_dir, seed, port)
+    setup_server_directory(server_dir, seed, port, SERVER_PROPERTIES_TEMPLATE)  
 
     cmd = [
         JAVA_PATH,

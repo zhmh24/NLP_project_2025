@@ -52,9 +52,7 @@ def collect_chunk_metadata_and_snbt(world_obj, cx, cz):
             return cx, cz, Counter(), -1
         mean_ys = sum(surface_ys) / len(surface_ys)
         std_ys = math.sqrt(sum((y - mean_ys) ** 2 for y in surface_ys) / len(surface_ys))
-        if std_ys > 10:
-            return cx, cz, Counter(), -1
-        base_y = int(mean_ys + random.uniform(-std_ys / 2, std_ys / 2) - random.uniform(0.3, 0.5) * REGION_HEIGHT)
+        base_y = int(mean_ys + random.uniform(-std_ys / 4, std_ys / 4) - random.uniform(0.3, 0.5) * REGION_HEIGHT)
 
         for dcx in range(cx, cx + REGION_CHUNK_RADIUS):
             for dcz in range(cz, cz + REGION_CHUNK_RADIUS):
@@ -107,7 +105,7 @@ def main():
 
     logging.info(f"Loading world from {SERVER_DIR}...") # Corrected to use SERVER_DIR
     try:
-        world = amulet.load_level(str(SERVER_DIR / "world")) # Corrected to use SERVER_DIR and cast to str
+        world = amulet.load_level(str(SERVER_DIR)) # Corrected to use SERVER_DIR and cast to str
     except Exception as e:
         logging.error(f"Failed to load world: {e}", exc_info=True)
         return

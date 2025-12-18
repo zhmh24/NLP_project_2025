@@ -121,8 +121,10 @@ def main():
         if args.sample_chunks > len(target_chunks_coords):
             logging.warning(f"Requested sample size ({args.sample_chunks}) exceeds total chunks ({len(target_chunks_coords)}). Processing all chunks.")
         else:
-            random.shuffle(target_chunks_coords)
-            target_chunks_coords = target_chunks_coords[:args.sample_chunks]
+            # Generate a mask to randomly select chunks while preserving order
+            mask = [1 if i < args.sample_chunks else 0 for i in range(len(target_chunks_coords))]
+            random.shuffle(mask)  # Shuffle the mask to randomly select chunks
+            target_chunks_coords = [chunk for chunk, m in zip(target_chunks_coords, mask) if m == 1]
     
     all_snbt_counts = Counter()
     chunk_processing_params = []

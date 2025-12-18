@@ -19,6 +19,8 @@ arg_parser.add_argument("--chunk-radius", type=int, default=64, help="Chunk radi
 arg_parser.add_argument("--region-chunk-radius", type=int, default=1, help="Side length of each region in chunks (default: 1)")
 arg_parser.add_argument("--region-height", type=int, default=16, help="Height of each region (default: 16)")
 arg_parser.add_argument("--num-workers", type=int, default=os.cpu_count() or 4, help=f"Number of worker threads (default: {os.cpu_count() or 4})")
+# Add an argument for sampling chunks
+arg_parser.add_argument("-s", "--sample-chunks", type=int, default=-1, help="Number of chunks to randomly sample. Use -1 to process all chunks (default: -1)")
 args = arg_parser.parse_args()
 
 SERVER_DIR = Path(f"worlds/{args.folder}")
@@ -113,6 +115,15 @@ def main():
     logging.info(f"Processing Overworld chunks around (0,0) with radius {args.chunk_radius}.")
     target_chunks_coords = [(cx, cz) for cx in range(-args.chunk_radius, args.chunk_radius - REGION_CHUNK_RADIUS, REGION_CHUNK_RADIUS)
                             for cz in range(-args.chunk_radius, args.chunk_radius - REGION_CHUNK_RADIUS, REGION_CHUNK_RADIUS)]
+
+    # Randomly sample chunks if the sample-chunks argument is provided
+    if args.sample_chunks != -1:
+        if args.sample_chunks > len(target_chunks_coords):
+            logging.warning(f"Requested sample size ({args.sample_chunks}) exceeds total chunks ({len(target_chunks_coords)}). Processing all chunks.")
+        else:
+            random.shuffle(target_chunks_coords)
+            target_chunks_coords = target_chunks_coords[:args.sample_chunks]
+    
     all_snbt_counts = Counter()
     chunk_processing_params = []
     logging.info("Phase 1: Collecting SNBT palette and surface Y for specified regions...")

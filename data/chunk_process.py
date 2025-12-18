@@ -11,6 +11,9 @@ from pathlib import Path
 from collections import Counter # Add this import
 import math
 
+
+random.seed(42)
+
 # Add counts to each block
 # Initialize the argument parser instance.
 arg_parser = argparse.ArgumentParser(description="Process Minecraft world data to extract 16x16x16 block ID samples near the surface.")

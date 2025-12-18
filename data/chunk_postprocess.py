@@ -28,6 +28,30 @@ def stage_1(folder_name, output_base_path):
 
     for snbt, old_id in snbt_to_id.items():
         base_name = snbt.split('[')[0]  # Extract base name from SNBT
+
+        if base_name == "universal_minecraft:double_plant":
+            if "plant_type=\"tall_grass\"" in snbt:
+                base_name += "[tall_grass]"
+            else:
+                base_name += "[not_tall_grass]"
+
+        elif base_name == "universal_minecraft:plant":
+            if snbt == "universal_minecraft:plant[plant_type=\"grass\"]":
+                base_name += "[grass]"
+            else:
+                base_name += "[not_grass]"
+
+        elif base_name == "universal_minecraft:stained_terracotta":
+            base_name += f"[{snbt}]"  # Keep each stained_terracotta separate
+
+        elif base_name == "universal_minecraft:log":
+            material = next((attr.split('=')[1] for attr in snbt.split(',') if "material" in attr), "unknown")
+            base_name += f"[material={material}]"
+
+        elif base_name == "universal_minecraft:leaves":
+            material = next((attr.split('=')[1] for attr in snbt.split(',') if "material" in attr), "unknown")
+            base_name += f"[material={material}]"
+
         if base_name not in base_name_to_new_id:
             base_name_to_new_id[base_name] = new_id
             new_id_to_base_name[new_id] = base_name
@@ -159,7 +183,8 @@ def stage_3(folder_name, output_base_path):
         s2_id_to_snbt = json.load(f)
 
     # Map IDs to ASCII characters
-    ascii_chars = list(string.ascii_lowercase + string.ascii_uppercase)
+    # Updated character set to include 64 characters: a-z, A-Z, 0-9, !, @
+    ascii_chars = list(string.ascii_lowercase + string.ascii_uppercase + string.digits + '!@')
     id_to_char = {}
     char_to_snbt = {}
     for i, id_int in enumerate(sorted(id_counts.keys())):

@@ -34,9 +34,10 @@ class TrainingConfig:
         print("================== MinecraftLM ==================")
 
 class MinecraftTrainer:
-    def __init__(self, model: BaseMinecraftLM, dataset: MinecraftChunkDataset, config: Optional[TrainingConfig] = None):
+    def __init__(self, model: BaseMinecraftLM, dataset: MinecraftChunkDataset, test_dataset: MinecraftChunkDataset, config: Optional[TrainingConfig] = None):
         self.model = model
         self.dataset = dataset
+        self.test_dataset = test_dataset
         self.config = config or TrainingConfig()
         self.device = self.config.device
         self.model.to(self.device)
@@ -47,6 +48,40 @@ class MinecraftTrainer:
             num_training_steps=self.config.total_steps,
         )
         self.scaler = GradScaler('cuda')  # Updated GradScaler initialization
+
+    def evaluate(self, dataset):
+        """
+        Evaluate the model on a given dataset.
+
+        Args:
+            dataset (MinecraftChunkDataset): The dataset to evaluate on.
+
+        Returns:
+            float: The average loss on the dataset.
+        """
+        self.model.eval()  # 切换到评估模式
+        dataloader = DataLoader(dataset, batch_size=self.config.batch_size, shuffle=False)
+        total_loss = 0
+        num_batches = 0
+
+        with torch.no_grad():  # 禁用梯度计算
+            for batch in dataloader:
+                input_ids = batch["input_ids"].to(self.device)
+                attention_mask = batch["attention_mask"].to(self.device)
+                labels = batch["labels"].to(self.device)
+
+                outputs = self.model.lm(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    labels=labels
+                )
+                loss = outputs.loss
+                total_loss += loss.item()
+                num_batches += 1
+
+        avg_loss = total_loss / num_batches
+        print(f"Evaluation Loss: {avg_loss:.4f}")
+        return avg_loss
 
     def train(self):
         self.model.train()
@@ -80,6 +115,12 @@ class MinecraftTrainer:
 
                 if step % self.config.eval_iteration == 0:
                     print(f"Step {step}: loss={loss.item():.4f}")
+
+                    # Perform evaluation on the test dataset
+                    if hasattr(self, 'test_dataset') and self.test_dataset is not None:
+                        self.evaluate(self.test_dataset)
+                    else:
+                        print("No test dataset provided for evaluation.")
 
                 if step % self.config.save_iteration == 0:
                     self.model.save_model(self.config.output_dir, step)

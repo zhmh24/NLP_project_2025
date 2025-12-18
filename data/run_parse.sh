@@ -1,11 +1,11 @@
-python jsonl_to_npy.py \
-    --input_jsonl_path data_s1/nlp_plains/generated_blocks.jsonl \
-    --folder_name nlp_plains \
+python NLP_project_2025/data/jsonl_to_npy.py \
+    --input-jsonl-path /home/zmh/2025Aut/pjt_nlp/generated_data_conditioned_10000.json \
+    --folder-name nlp_plains \
     -l 0
 
-python write_to_world.py \
+python NLP_project_2025/data/write_to_world.py \
     --data_path data_s1/nlp_plains \
     --world_path worlds/pre \
-    --cx 0 \
-    --cz 0 \
+    --cx 5 \
+    --cz 5 \
     --y 160

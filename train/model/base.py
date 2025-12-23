@@ -3,10 +3,11 @@ import os
 from typing import Any, Dict, Optional
 
 import torch
+import torch.nn as nn
 from transformers import PreTrainedModel, PreTrainedTokenizer
 
 
-class BaseMinecraftLM(metaclass=abc.ABCMeta):
+class BaseMinecraftLM(nn.Module, metaclass=abc.ABCMeta):
 
     PRETRAINED_LM_PATH = ""
     PRETRAINED_TOKENIZER_PATH = ""
@@ -24,6 +25,7 @@ class BaseMinecraftLM(metaclass=abc.ABCMeta):
         lm_kwargs: Dict[str, Any] = {},
         tokenizer_kwargs: Dict[str, Any] = {},
     ):
+        nn.Module.__init__(self)
         self.load_pretrained(
             lm_path, tokenizer_path, lm, tokenizer, lm_kwargs, tokenizer_kwargs
         )
@@ -39,12 +41,21 @@ class BaseMinecraftLM(metaclass=abc.ABCMeta):
     def device(self):
         return self.lm.device
 
-    def to(self, device: torch.device):
-        self.lm = self.lm.to(device)
-        return self
+    # def to(self, device: torch.device):
+    #     self.lm = self.lm.to(device)
+    #     return self
+
+    # def save_model(self, checkpoint_path: str, it: int):
+    #     self.lm.save_pretrained(os.path.join(checkpoint_path, f"iteration_{it}"))
 
     def save_model(self, checkpoint_path: str, it: int):
-        self.lm.save_pretrained(os.path.join(checkpoint_path, f"iteration_{it}"))
+        save_dir = os.path.join(checkpoint_path, f"iteration_{it}")
+        os.makedirs(save_dir, exist_ok=True)
+        # 保存整个模型的权重，包含自定义 Embedding
+        torch.save(self.state_dict(), os.path.join(save_dir, "pytorch_model.bin"))
+        # 同时保存配置和分词器
+        self.lm.config.save_pretrained(save_dir)
+        self.tokenizer.save_pretrained(save_dir)
 
     @abc.abstractmethod
     def load_pretrained_lm(
@@ -71,9 +82,6 @@ class BaseMinecraftLM(metaclass=abc.ABCMeta):
         lm_kwargs: Dict[str, Any] = {},
         tokenizer_kwargs: Dict[str, Any] = {},
     ):
-        self.lm = lm
-        self.tokenizer = tokenizer
-
         if lm is None:
             if lm_path is None:
                 lm_path = self.PRETRAINED_LM_PATH

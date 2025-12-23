@@ -41,7 +41,7 @@ class MinecraftTrainer:
         self.config = config or TrainingConfig()
         self.device = self.config.device
         self.model.to(self.device)
-        self.optimizer = AdamW(self.model.lm.parameters(), lr=self.config.learning_rate, eps=self.config.epsilon)
+        self.optimizer = AdamW(self.model.parameters(), lr=self.config.learning_rate, eps=self.config.epsilon)
         self.lr_scheduler = get_linear_schedule_with_warmup(
             self.optimizer,
             num_warmup_steps=self.config.lr_warmup_steps,
@@ -69,11 +69,17 @@ class MinecraftTrainer:
                 input_ids = batch["input_ids"].to(self.device)
                 attention_mask = batch["attention_mask"].to(self.device)
                 labels = batch["labels"].to(self.device)
+                biome_ids = batch["biome_ids"].to(self.device)
+                tree_ids = batch["tree_ids"].to(self.device)
+                elevation_ids = batch["elevation_ids"].to(self.device)
 
-                outputs = self.model.lm(
+                outputs = self.model(
                     input_ids=input_ids,
                     attention_mask=attention_mask,
-                    labels=labels
+                    labels=labels,
+                    biome_ids=biome_ids,
+                    elevation_ids=elevation_ids,
+                    tree_ids=tree_ids
                 )
                 loss = outputs.loss
                 total_loss += loss.item()
@@ -95,12 +101,18 @@ class MinecraftTrainer:
                 input_ids = batch["input_ids"].to(self.device)
                 attention_mask = batch["attention_mask"].to(self.device)
                 labels = batch["labels"].to(self.device)
+                biome_ids = batch["biome_ids"].to(self.device)
+                tree_ids = batch["tree_ids"].to(self.device)
+                elevation_ids = batch["elevation_ids"].to(self.device)
 
                 with autocast('cuda'):  # 启用混合精度训练
-                    outputs = self.model.lm(
+                    outputs = self.model(
                         input_ids=input_ids,
                         attention_mask=attention_mask,
-                        labels=labels
+                        labels=labels,
+                        biome_ids=biome_ids,
+                        elevation_ids=elevation_ids,
+                        tree_ids=tree_ids
                     )
                     loss = outputs.loss
 

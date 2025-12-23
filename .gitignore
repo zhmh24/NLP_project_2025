@@ -9,3 +9,7 @@ data/dataset_train.jsonl
 Qwen-MinecraftLM
 *.pyc
 data/dataset_prompter
+sampler.py
+data/results
+projection.py
+biome2id.json

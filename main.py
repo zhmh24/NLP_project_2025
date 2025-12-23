@@ -3,8 +3,9 @@ from train.dataset import MinecraftChunkDataset
 from train.trainer import MinecraftTrainer, TrainingConfig
 
 # 初始化模型和数据集
-model = MinecraftLM()
-dataset = MinecraftChunkDataset("data/dataset.jsonl", tokenizer=model.tokenizer, context_length=model.context_length)
+model = MinecraftLM(context_length=9216)
+dataset = MinecraftChunkDataset("data/dataset_train.jsonl", tokenizer=model.tokenizer, context_length=model.context_length)
+eval_dataset = MinecraftChunkDataset("data/dataset_test.jsonl", tokenizer=model.tokenizer, context_length=model.context_length)
 
 # 可选：自定义训练参数
 config = TrainingConfig(
@@ -16,5 +17,5 @@ config = TrainingConfig(
 )
 
 # 创建Trainer并开始训练
-trainer = MinecraftTrainer(model, dataset, config)
+trainer = MinecraftTrainer(model, dataset, eval_dataset, config)
 trainer.train()

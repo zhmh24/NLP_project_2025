@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
-
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import torch
+import torch.nn as nn
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -58,7 +57,65 @@ class QwenForMinecraft(BaseMinecraftLM):
     ) -> PreTrainedTokenizer:
         return AutoTokenizer.from_pretrained(path, **tokenizer_kwargs)
 
-    def sample(self, prompt: str, max_new_tokens: int = 512, temperature: float = 1.0, top_p: float = 0.95, device: str = None, **gen_kwargs):
+    def _ensure_encoding_proj(self, encoding: torch.Tensor) -> nn.Linear:
+        encoding_dim = int(encoding.shape[-1])
+        hidden_size = int(getattr(self.lm.config, "hidden_size"))
+        proj = getattr(self.lm, "encoding_proj", None)
+        if (
+            proj is None
+            or not isinstance(proj, nn.Linear)
+            or proj.in_features != encoding_dim
+            or proj.out_features != hidden_size
+        ):
+            proj = nn.Linear(encoding_dim, hidden_size, bias=False)
+            proj.to(device=self.lm.device, dtype=getattr(self.lm, "dtype", torch.float32))
+            self.lm.encoding_proj = proj
+        return proj
+
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: Optional[torch.Tensor] = None,
+        labels: Optional[torch.Tensor] = None,
+        encoding: Optional[torch.Tensor] = None,
+        **kwargs,
+    ):
+        if encoding is None:
+            return self.lm(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                labels=labels,
+                **kwargs,
+            )
+
+        if encoding.dim() == 1:
+            encoding = encoding.unsqueeze(0)
+
+        embedding_layer = self.lm.get_input_embeddings()
+        inputs_embeds = embedding_layer(input_ids)
+
+        proj = self._ensure_encoding_proj(encoding)
+        encoding = encoding.to(device=inputs_embeds.device, dtype=inputs_embeds.dtype)
+        enc_emb = proj(encoding).unsqueeze(1)
+        inputs_embeds = inputs_embeds + enc_emb
+
+        return self.lm(
+            inputs_embeds=inputs_embeds,
+            attention_mask=attention_mask,
+            labels=labels,
+            **kwargs,
+        )
+
+    def sample(
+        self,
+        prompt: str,
+        max_new_tokens: int = 512,
+        temperature: float = 1.0,
+        top_p: float = 0.95,
+        device: str = None,
+        encoding: Optional[torch.Tensor] = None,
+        **gen_kwargs,
+    ):
         """
         基于prompt生成区块文本。
         :param prompt: 输入的文本提示
@@ -73,14 +130,35 @@ class QwenForMinecraft(BaseMinecraftLM):
         self.lm.eval()
         inputs = self.tokenizer(prompt, return_tensors="pt").to(device)
         with torch.no_grad():
-            output = self.lm.generate(
-                **inputs,
-                max_new_tokens=max_new_tokens,
-                temperature=temperature,
-                top_p=top_p,
-                do_sample=True,
-                pad_token_id=self.tokenizer.eos_token_id,
-                **gen_kwargs
-            )
+            if encoding is None:
+                output = self.lm.generate(
+                    **inputs,
+                    max_new_tokens=max_new_tokens,
+                    temperature=temperature,
+                    top_p=top_p,
+                    do_sample=True,
+                    pad_token_id=self.tokenizer.eos_token_id,
+                    **gen_kwargs,
+                )
+            else:
+                input_ids = inputs["input_ids"]
+                attention_mask = inputs.get("attention_mask")
+                if encoding.dim() == 1:
+                    encoding = encoding.unsqueeze(0)
+                embedding_layer = self.lm.get_input_embeddings()
+                inputs_embeds = embedding_layer(input_ids)
+                proj = self._ensure_encoding_proj(encoding)
+                encoding = encoding.to(device=inputs_embeds.device, dtype=inputs_embeds.dtype)
+                inputs_embeds = inputs_embeds + proj(encoding).unsqueeze(1)
+                output = self.lm.generate(
+                    inputs_embeds=inputs_embeds,
+                    attention_mask=attention_mask,
+                    max_new_tokens=max_new_tokens,
+                    temperature=temperature,
+                    top_p=top_p,
+                    do_sample=True,
+                    pad_token_id=self.tokenizer.eos_token_id,
+                    **gen_kwargs,
+                )
         generated = self.tokenizer.decode(output[0], skip_special_tokens=True)
         return generated

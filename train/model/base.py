@@ -43,6 +43,9 @@ class BaseMinecraftLM(metaclass=abc.ABCMeta):
         self.lm = self.lm.to(device)
         return self
 
+    def forward(self, *args, **kwargs):
+        return self.lm(*args, **kwargs)
+
     def save_model(self, checkpoint_path: str, it: int):
         self.lm.save_pretrained(os.path.join(checkpoint_path, f"iteration_{it}"))
 

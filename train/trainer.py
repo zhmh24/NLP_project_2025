@@ -34,7 +34,16 @@ class TrainingConfig:
         print("================== MinecraftLM ==================")
 
 class MinecraftTrainer:
-    def __init__(self, model: BaseMinecraftLM, dataset: MinecraftChunkDataset, test_dataset: MinecraftChunkDataset, config: Optional[TrainingConfig] = None):
+    def __init__(
+        self,
+        model: BaseMinecraftLM,
+        dataset: MinecraftChunkDataset,
+        test_dataset: Optional[MinecraftChunkDataset] = None,
+        config: Optional[TrainingConfig] = None,
+    ):
+        if isinstance(test_dataset, TrainingConfig) and config is None:
+            config = test_dataset
+            test_dataset = None
         self.model = model
         self.dataset = dataset
         self.test_dataset = test_dataset
@@ -69,11 +78,15 @@ class MinecraftTrainer:
                 input_ids = batch["input_ids"].to(self.device)
                 attention_mask = batch["attention_mask"].to(self.device)
                 labels = batch["labels"].to(self.device)
+                encoding = batch.get("encoding")
+                if encoding is not None:
+                    encoding = encoding.to(self.device)
 
-                outputs = self.model.lm(
+                outputs = self.model.forward(
                     input_ids=input_ids,
                     attention_mask=attention_mask,
-                    labels=labels
+                    labels=labels,
+                    encoding=encoding,
                 )
                 loss = outputs.loss
                 total_loss += loss.item()
@@ -95,12 +108,16 @@ class MinecraftTrainer:
                 input_ids = batch["input_ids"].to(self.device)
                 attention_mask = batch["attention_mask"].to(self.device)
                 labels = batch["labels"].to(self.device)
+                encoding = batch.get("encoding")
+                if encoding is not None:
+                    encoding = encoding.to(self.device)
 
                 with autocast('cuda'):  # 启用混合精度训练
-                    outputs = self.model.lm(
+                    outputs = self.model.forward(
                         input_ids=input_ids,
                         attention_mask=attention_mask,
-                        labels=labels
+                        labels=labels,
+                        encoding=encoding,
                     )
                     loss = outputs.loss
 

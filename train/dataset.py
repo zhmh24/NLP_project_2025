@@ -27,10 +27,10 @@ class MinecraftChunkDataset(Dataset):
         chunk = self.data[idx]
         attr = self.get_attribute_data(idx)
 
-        # Generate text prompt for llm
+        # # Generate text prompt for llm
         prompter = MinecraftPrompter()
-        prompt = prompter.generate_prompt(attr)
-        chunk = prompt + chunk
+        # prompt = prompter.generate_prompt(attr)
+        # chunk = prompt + chunk
 
         x = self.tokenizer(chunk, return_tensors="pt", padding="max_length", truncation=True, max_length=self.context_length)
         input_ids = x["input_ids"].squeeze(0)

@@ -12,7 +12,7 @@ config = TrainingConfig(
     output_dir="Qwen-MinecraftLM",
     learning_rate=5e-5,
     batch_size=1,
-    total_steps=1000,
+    total_steps=10000,
     # 其他参数可按需调整
 )
 

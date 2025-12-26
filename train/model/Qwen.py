@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -17,7 +18,8 @@ from train.model.base import BaseMinecraftLM
 
 PRETRAINED_MODEL_PATH = "Qwen/Qwen3-0.6B"
 
-class QwenForMinecraft(BaseMinecraftLM):
+class QwenForMinecraft(BaseMinecraftLM, nn.Module):
+    from tqdm import tqdm
 
     PRETRAINED_LM_PATH = PRETRAINED_MODEL_PATH
     PRETRAINED_TOKENIZER_PATH = PRETRAINED_MODEL_PATH
@@ -35,6 +37,8 @@ class QwenForMinecraft(BaseMinecraftLM):
         lm_kwargs: Dict[str, Any] = {},
         tokenizer_kwargs: Dict[str, Any] = {},
     ):
+        nn.Module.__init__(self)
+
         super().__init__(
             lm,
             tokenizer,
@@ -44,8 +48,9 @@ class QwenForMinecraft(BaseMinecraftLM):
             lm_kwargs,
             tokenizer_kwargs,
         )
-        
+
         h_size = 1024
+
         self.biome_embedding = nn.Embedding(100, h_size)
         self.elevation_embedding = nn.Embedding(10, h_size)
         self.tree_embedding = nn.Embedding(10, h_size)
@@ -139,42 +144,152 @@ class QwenForMinecraft(BaseMinecraftLM):
 
     def sample(self, prompt: str, biome_str: str, tree_str: str, slope_str: str, 
                max_new_tokens: int = 9216, device: str = None, **gen_kwargs):
-        device = device or self.lm.device
+        """
+        采样时每步都加条件 embedding，和训练完全一致。
+        """
+        device = device or (self.lm.device if hasattr(self.lm, 'device') else 'cpu')
         self.lm.eval()
-        
+
         # 1. 编码文本
-        inputs = self.tokenizer(prompt, return_tensors="pt").to(device)
-        # input_ids = inputs["input_ids"]
-        
-        # 2. 准备条件 ID
-        b_id = torch.tensor([self.biome_to_id.get(biome_str, 0)]).to(device)
-        t_id = torch.tensor([self.tree_to_id.get(tree_str, 0)]).to(device)
-        s_id = torch.tensor([self.slope_to_id.get(slope_str, 0)]).to(device)
-        
-        # 3. 构造 inputs_embeds
-        # 注意：generate 过程中需要处理不断增长的序列，这里使用最简化的 inputs_embeds 传入方式
+        inputs = self.tokenizer(prompt, return_tensors="pt")
+        input_ids = inputs["input_ids"].to(device)
+        attention_mask = inputs.get("attention_mask", None)
+        if attention_mask is not None:
+            attention_mask = attention_mask.to(device)
 
-        cond_vec = (self.biome_embedding(b_id) + self.tree_embedding(t_id) + self.elevation_embedding(s_id)).unsqueeze(1)
+        # 2. 条件 id
+        biome_id = self.biome_to_id.get(biome_str, -1)
+        tree_id = self.tree_to_id.get(tree_str, -1)
+        slope_id = self.slope_to_id.get(slope_str, -1)
 
+        # 3. 保存原始 forward
         original_forward = self.lm.forward
 
-        def hooked_forward(input_ids=None, inputs_embeds=None, **kwargs):
+        def custom_forward(input_ids=None, inputs_embeds=None, **kwargs):
+            # input_ids: (batch, seq)
             if inputs_embeds is None and input_ids is not None:
-                inputs_embeds = self.lm.get_input_embeddings()(input_ids)
-                inputs_embeds = inputs_embeds + cond_vec
+                seq_len = input_ids.shape[1]
+                b_id = torch.full((input_ids.shape[0], seq_len), biome_id, dtype=torch.long, device=input_ids.device)
+                t_id = torch.full((input_ids.shape[0], seq_len), tree_id, dtype=torch.long, device=input_ids.device)
+                s_id = torch.full((input_ids.shape[0], seq_len), slope_id, dtype=torch.long, device=input_ids.device)
+                embeds = self.lm.get_input_embeddings()(input_ids)
+                biome_embeds = self.biome_embedding(b_id)
+                tree_embeds = self.tree_embedding(t_id)
+                elevation_embeds = self.elevation_embedding(s_id)
+                inputs_embeds = embeds + biome_embeds + elevation_embeds + tree_embeds
             return original_forward(input_ids=None, inputs_embeds=inputs_embeds, **kwargs)
-        
-        self.lm.forward = hooked_forward
-        inputs = self.tokenizer(prompt, return_tensors="pt").to(device)
+
+        self.lm.forward = custom_forward
         try:
             with torch.no_grad():
                 output = self.lm.generate(
-                    input_ids=inputs["input_ids"],
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
                     max_new_tokens=max_new_tokens,
-                    pad_token_id=self.tokenizer.eos_token_id,
                     do_sample=True,
+                    pad_token_id=self.tokenizer.eos_token_id,
                     **gen_kwargs
                 )
         finally:
             self.lm.forward = original_forward
         return self.tokenizer.decode(output[0], skip_special_tokens=True)
+
+
+
+    def step_sample(
+        self,
+        input_ids: torch.Tensor,
+        biome_id: int,
+        tree_id: int,
+        slope_id: int,
+        temperature: float = 1.0,
+        top_k: int = 50,
+        top_p: float = 0.95,
+        use_argmax: bool = False,
+    ):
+        # input_ids: (batch, seq)
+        device = input_ids.device
+        batch_size, seq_len = input_ids.shape
+
+        with torch.amp.autocast('cuda'):
+            # 构造条件 embedding
+            b_id = torch.full((batch_size, seq_len), biome_id, dtype=torch.long, device=device)
+            t_id = torch.full((batch_size, seq_len), tree_id, dtype=torch.long, device=device)
+            s_id = torch.full((batch_size, seq_len), slope_id, dtype=torch.long, device=device)
+            embeds = self.lm.get_input_embeddings()(input_ids)
+            biome_embeds = self.biome_embedding(b_id)
+            tree_embeds = self.tree_embedding(t_id)
+            elevation_embeds = self.elevation_embedding(s_id)
+            inputs_embeds = embeds + biome_embeds + elevation_embeds + tree_embeds
+
+            attention_mask = torch.ones_like(input_ids, device=device)
+            outputs = self.lm(
+                inputs_embeds=inputs_embeds,
+                attention_mask=attention_mask,
+            )
+            logits = outputs.logits[:, -1, :] / temperature
+
+            # Top-k, top-p采样
+            if use_argmax:
+                next_token = logits.argmax(-1)
+            else:
+                # top_k
+                if top_k > 0:
+                    top_k = min(top_k, logits.size(-1))
+                    indices_to_remove = logits < torch.topk(logits, top_k)[0][..., -1, None]
+                    logits = logits.masked_fill(indices_to_remove, float('-inf'))
+                # top_p
+                if top_p < 1.0:
+                    sorted_logits, sorted_indices = torch.sort(logits, descending=True)
+                    cumulative_probs = torch.cumsum(F.softmax(sorted_logits, dim=-1), dim=-1)
+                    sorted_indices_to_remove = cumulative_probs > top_p
+                    sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[..., :-1].clone()
+                    sorted_indices_to_remove[..., 0] = 0
+                    for batch_idx in range(logits.size(0)):
+                        remove_indices = sorted_indices[batch_idx][sorted_indices_to_remove[batch_idx]]
+                        logits[batch_idx, remove_indices] = float('-inf')
+                probs = F.softmax(logits, dim=-1)
+                next_token = torch.multinomial(probs, num_samples=1).squeeze(1)
+        return next_token
+
+    def sample_stepwise(
+        self,
+        prompt: str,
+        biome_str: str,
+        tree_str: str,
+        slope_str: str,
+        max_new_tokens: int = 2000,
+        temperature: float = 1.0,
+        top_k: int = 50,
+        top_p: float = 0.95,
+        use_argmax: bool = False,
+        device: str = None,
+        show_progress: bool = True,
+    ):
+        from tqdm import tqdm
+        device = device or (self.lm.device if hasattr(self.lm, 'device') else 'cpu')
+        self.lm.eval()
+        inputs = self.tokenizer(prompt, return_tensors="pt")
+        input_ids = inputs["input_ids"].to(device)
+        biome_id = self.biome_to_id.get(biome_str, -1)
+        tree_id = self.tree_to_id.get(tree_str, -1)
+        slope_id = self.slope_to_id.get(slope_str, -1)
+
+        generated = input_ids
+        iterator = tqdm(range(max_new_tokens), desc="Sampling") if show_progress else range(max_new_tokens)
+        for _ in iterator:
+            next_token = self.step_sample(
+                generated,
+                biome_id,
+                tree_id,
+                slope_id,
+                temperature=temperature,
+                top_k=top_k,
+                top_p=top_p,
+                use_argmax=use_argmax,
+            )
+            generated = torch.cat([generated, next_token.unsqueeze(-1)], dim=-1)
+            # 可选：遇到eos提前结束
+            if (next_token == self.tokenizer.eos_token_id).all():
+                break
+        return self.tokenizer.decode(generated[0], skip_special_tokens=True)

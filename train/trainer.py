@@ -12,17 +12,19 @@ from torch.amp import GradScaler, autocast  # Updated import
 from train.model.Qwen import QwenForMinecraft
 from train.model.base import BaseMinecraftLM
 from train.dataset import MinecraftChunkDataset
+from train.prompter import MinecraftPrompter
 
 @dataclass
 class TrainingConfig:
     output_dir: str = "Qwen-MinecraftLM"
+    data_dir: str = "generated_data"
     learning_rate: float = 5e-5
     epsilon: float = 1e-8
     lr_warmup_steps: int = 50
     batch_size: int = 4
     total_steps: int = 1000
     eval_iteration: int = 100
-    save_iteration: int = 1000
+    save_iteration: int = 2500
     gradient_accumulation_steps: int = 1
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -36,6 +38,7 @@ class TrainingConfig:
 class MinecraftTrainer:
     def __init__(self, model: BaseMinecraftLM, dataset: MinecraftChunkDataset, test_dataset: MinecraftChunkDataset, config: Optional[TrainingConfig] = None):
         self.model = model
+        self.prompter = MinecraftPrompter()
         self.dataset = dataset
         self.test_dataset = test_dataset
         self.config = config or TrainingConfig()
@@ -116,8 +119,8 @@ class MinecraftTrainer:
                     )
                     loss = outputs.loss
 
-                self.scaler.scale(loss).backward()  # 使用GradScaler缩放梯度
-                self.scaler.step(self.optimizer)  # Updated order: optimizer step first
+                self.scaler.scale(loss).backward()  
+                self.scaler.step(self.optimizer)  
                 self.lr_scheduler.step()  # Scheduler step after optimizer step
                 self.scaler.update()  # 更新缩放因子
                 self.optimizer.zero_grad()
@@ -127,12 +130,59 @@ class MinecraftTrainer:
 
                 if step % self.config.eval_iteration == 0:
                     print(f"Step {step}: loss={loss.item():.4f}")
+                    print(f"\n--- Generating Sample at Step {step} ---")
+                    try:
+                        
+                        last_idx = batch['idx'][-1].item()
+                        
+                        full_training_text = self.dataset.data[last_idx] 
+                        attr_data = self.dataset.get_attribute_data(last_idx)
+                        
+                        
+                        full_text = full_training_text
+                        
+                        
+                        first_dollar = full_text.find('$')
+                        second_dollar = full_text.find('$', first_dollar + 1)
+                        
+                        if second_dollar != -1:
+                            input_prompt = full_text[:second_dollar + 1] 
+                        else:
+                            input_prompt = full_text[:first_dollar + 1]
 
-                    # Perform evaluation on the test dataset
-                    if hasattr(self, 'test_dataset') and self.test_dataset is not None:
-                        self.evaluate(self.test_dataset)
-                    else:
-                        print("No test dataset provided for evaluation.")
+                        print(f"Captured Prompt:\n{input_prompt}")
+
+                        raw_biome = attr_data['biome'] 
+                        raw_tree = self.prompter.tree_prompt(attr_data)
+                        raw_slope = self.prompter.elevation_prompt(attr_data)
+                        print(f"The attributes are:\n{raw_biome}, {raw_tree}, {raw_slope}\n")
+
+                        generated_body = self.model.sample_stepwise(
+                            prompt=input_prompt,
+                            biome_str=raw_biome,
+                            tree_str=raw_tree,
+                            slope_str=raw_slope,
+                            max_new_tokens=2000, 
+                            temperature=0.8
+                        )
+
+
+
+                        save_filename = os.path.join(self.config.data_dir, f"sample_step_{step}.txt")
+                        with open(save_filename, "w", encoding="utf-8") as f:
+                            f.write(f"--- Metadata ---\n")
+                            f.write(f"Step: {step}\n")
+                            f.write(f"Attributes: {attr_data}\n")
+                            f.write(f"--- Prompt ---\n")
+                            f.write(input_prompt + "\n")
+                            f.write(f"--- Generated ---\n")
+                            f.write(generated_body + "\n")
+                        print(f"✅ Sample saved to {save_filename}")
+
+                    except Exception as e:
+                        print(f"Sample generation failed: {e}")
+                    finally:
+                        self.model.train() 
 
                 if step % self.config.save_iteration == 0:
                     self.model.save_model(self.config.output_dir, step)
